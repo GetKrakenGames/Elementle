@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Elementle - Daily Puzzle (All 118)</title>
+  <style>
+    /* ----- Basic Layout & Styling ----- */
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 20px;
+    }
+    #periodicTable {
+      margin: 0 auto 20px auto;
+      display: grid;
+      /* 9 total rows in our layout (1–7 for “main” table, row 8 for lanthanides, row 9 for actinides) */
+      grid-template-rows: repeat(9, 30px);
+      /* 18 columns (groups 1–18) */
+      grid-template-columns: repeat(18, 30px);
+      gap: 3px;
+      justify-content: center;
+    }
+    .element-square {
+      width: 30px;
+      height: 30px;
+      background-color: gray; /* Default, overridden by category color */
+    }
+    .answer-square {
+      background-color: black !important; /* Hidden until revealed */
+    }
+    #game {
+      margin: 20px auto;
+      max-width: 720px; /* Increased to fit extra feedback cell */
+    }
+    .row {
+      display: flex;
+      justify-content: center;
+      margin: 5px 0;
+    }
+    .cell {
+      width: 120px;
+      height: 40px;
+      border: 1px solid #ccc;
+      margin: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+    #input {
+      margin: 20px 0;
+    }
+    #message {
+      font-size: 18px;
+      margin-top: 10px;
+    }
+
+    /* ----- Default Feedback Colors ----- */
+    .correct {
+      background-color: #6aaa64; /* green */
+      color: white;
+    }
+    .wrong {
+      background-color: #787c7e; /* gray */
+      color: white;
+    }
+    .orange {
+      background-color: orange;
+      color: black;
+    }
+    .yellow {
+      background-color: yellow;
+      color: black;
+    }
+
+    /* ----- Share Button ----- */
+    #shareButton {
+      margin-top: 20px;
+    }
+
+    /* ----- Stats Modal ----- */
+    #statsModal {
+      position: fixed;
+      display: none; /* hidden by default */
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: rgba(0, 0, 0, 0.5);
+      justify-content: center; /* center horizontally */
+      align-items: center;     /* center vertically */
+    }
+    #statsContent {
+      background: #fff;
+      padding: 20px;
+      border-radius: 5px;
+      width: 300px;
+      margin: 0 auto;
+    }
+
+    /* ----- Color-Blind Mode Overrides (Optional) ----- */
+    .color-blind .correct {
+      background-color: #339966 !important; /* darker green */
+    }
+    .color-blind .wrong {
+      background-color: #666666 !important; /* darker gray */
+    }
+    .color-blind .orange {
+      background-color: #FFA500 !important; /* standard orange */
+    }
+    .color-blind .yellow {
+      background-color: #FFFF00 !important; /* standard yellow */
+    }
+  </style>
+</head>
+<body>
+  <h1>Elementle (Daily Puzzle)</h1>
+  <p>
+    Guess the daily element in 6 tries!
+    <br>
+    &bull; Atomic # (↑ or ↓)  
+    <br>
+    &bull; Symbol cell color indicates <strong>category</strong> proximity (green/orange/yellow/gray).  
+    <br>
+    &bull; Group, Period, and Type (Metal/Nonmetal/Metalloid) distances shown.
+  </p>
+
+  <!-- Toggle color-blind mode -->
+  <label>
+    <input type="checkbox" id="colorBlindToggle" onclick="toggleColorBlindMode()">
+    Color-Blind Mode
+  </label>
+  <br><br>
+
+  <div id="periodicTable"></div>
+
+  <div id="game"></div>
+
+  <div id="input">
+    <input type="text" id="guessInput" placeholder="Enter element name" list="elementNames">
+    <button onclick="submitGuess()">Submit</button>
+    <datalist id="elementNames"></datalist>
+  </div>
+
+  <div id="message"></div>
+
+  <!-- Show Stats button -->
+  <button onclick="openStats()">Show Stats</button>
+
+  <!-- Stats Modal -->
+  <div id="statsModal">
+    <div id="statsContent">
+      <h2>Your Stats</h2>
+      <p id="gamesPlayed">Games played: 0</p>
+      <p id="gamesWon">Games won: 0</p>
+      <p id="currentStreak">Current streak: 0</p>
+      <p id="maxStreak">Max streak: 0</p>
+      <button onclick="closeStats()">Close</button>
+    </div>
+  </div>
+
+  <script>
+    /************************************************************************
+     * 1. FULL PERIODIC TABLE DATA (All 118)
+     ************************************************************************/
+    const elements = [
+      // Row 1
+      { name: "Hydrogen",  symbol: "H",  atomicNumber: 1,  group: 1,  period: 1,  category: "nonmetal" },
+      { name: "Helium",    symbol: "He", atomicNumber: 2,  group: 18, period: 1,  category: "noble gas" },
+
+      // Row 2
+      { name: "Lithium",   symbol: "Li", atomicNumber: 3,  group: 1,  period: 2,  category: "alkali metal" },
+      { name: "Beryllium", symbol: "Be", atomicNumber: 4,  group: 2,  period: 2,  category: "alkaline earth metal" },
+      { name: "Boron",     symbol: "B",  atomicNumber: 5,  group: 13, period: 2,  category: "metalloid" },
+      { name: "Carbon",    symbol: "C",  atomicNumber: 6,  group: 14, period: 2,  category: "nonmetal" },
+      { name: "Nitrogen",  symbol: "N",  atomicNumber: 7,  group: 15, period: 2,  category: "nonmetal" },
+      { name: "Oxygen",    symbol: "O",  atomicNumber: 8,  group: 16, period: 2,  category: "nonmetal" },
+      { name: "Fluorine",  symbol: "F",  atomicNumber: 9,  group: 17, period: 2,  category: "halogen" },
+      { name: "Neon",      symbol: "Ne", atomicNumber: 10, group: 18, period: 2,  category: "noble gas" },
+
+      // Row 3
+      { name: "Sodium",     symbol: "Na", atomicNumber: 11, group: 1,  period: 3,  category: "alkali metal" },
+      { name: "Magnesium",  symbol: "Mg", atomicNumber: 12, group: 2,  period: 3,  category: "alkaline earth metal" },
+      { name: "Aluminum",   symbol: "Al", atomicNumber: 13, group: 13, period: 3,  category: "metal" },
+      { name: "Silicon",    symbol: "Si", atomicNumber: 14, group: 14, period: 3,  category: "metalloid" },
+      { name: "Phosphorus", symbol: "P",  atomicNumber: 15, group: 15, period: 3,  category: "nonmetal" },
+      { name: "Sulfur",     symbol: "S",  atomicNumber: 16, group: 16, period: 3,  category: "nonmetal" },
+      { name: "Chlorine",   symbol: "Cl", atomicNumber: 17, group: 17, period: 3,  category: "halogen" },
+      { name: "Argon",      symbol: "Ar", atomicNumber: 18, group: 18, period: 3,  category: "noble gas" },
+
+      // Row 4
+      { name: "Potassium",   symbol: "K",  atomicNumber: 19, group: 1,  period: 4,  category: "alkali metal" },
+      { name: "Calcium",     symbol: "Ca", atomicNumber: 20, group: 2,  period: 4,  category: "alkaline earth metal" },
+      { name: "Scandium",    symbol: "Sc", atomicNumber: 21, group: 3,  period: 4,  category: "transition metal" },
+      { name: "Titanium",    symbol: "Ti", atomicNumber: 22, group: 4,  period: 4,  category: "transition metal" },
+      { name: "Vanadium",    symbol: "V",  atomicNumber: 23, group: 5,  period: 4,  category: "transition metal" },
+      { name: "Chromium",    symbol: "Cr", atomicNumber: 24, group: 6,  period: 4,  category: "transition metal" },
+      { name: "Manganese",   symbol: "Mn", atomicNumber: 25, group: 7,  period: 4,  category: "transition metal" },
+      { name: "Iron",        symbol: "Fe", atomicNumber: 26, group: 8,  period: 4,  category: "transition metal" },
+      { name: "Cobalt",      symbol: "Co", atomicNumber: 27, group: 9,  period: 4,  category: "transition metal" },
+      { name: "Nickel",      symbol: "Ni", atomicNumber: 28, group: 10, period: 4,  category: "transition metal" },
+      { name: "Copper",      symbol: "Cu", atomicNumber: 29, group: 11, period: 4,  category: "transition metal" },
+      { name: "Zinc",        symbol: "Zn", atomicNumber: 30, group: 12, period: 4,  category: "transition metal" },
+      { name: "Gallium",     symbol: "Ga", atomicNumber: 31, group: 13, period: 4,  category: "metal" },
+      { name: "Germanium",   symbol: "Ge", atomicNumber: 32, group: 14, period: 4,  category: "metalloid" },
+      { name: "Arsenic",     symbol: "As", atomicNumber: 33, group: 15, period: 4,  category: "metalloid" },
+      { name: "Selenium",    symbol: "Se", atomicNumber: 34, group: 16, period: 4,  category: "nonmetal" },
+      { name: "Bromine",     symbol: "Br", atomicNumber: 35, group: 17, period: 4,  category: "halogen" },
+      { name: "Krypton",     symbol: "Kr", atomicNumber: 36, group: 18, period: 4,  category: "noble gas" },
+
+      // Row 5
+      { name: "Rubidium",    symbol: "Rb", atomicNumber: 37, group: 1,  period: 5,  category: "alkali metal" },
+      { name: "Strontium",   symbol: "Sr", atomicNumber: 38, group: 2,  period: 5,  category: "alkaline earth metal" },
+      { name: "Yttrium",     symbol: "Y",  atomicNumber: 39, group: 3,  period: 5,  category: "transition metal" },
+      { name: "Zirconium",   symbol: "Zr", atomicNumber: 40, group: 4,  period: 5,  category: "transition metal" },
+      { name: "Niobium",     symbol: "Nb", atomicNumber: 41, group: 5,  period: 5,  category: "transition metal" },
+      { name: "Molybdenum",  symbol: "Mo", atomicNumber: 42, group: 6,  period: 5,  category: "transition metal" },
+      { name: "Technetium",  symbol: "Tc", atomicNumber: 43, group: 7,  period: 5,  category: "transition metal" },
+      { name: "Ruthenium",   symbol: "Ru", atomicNumber: 44, group: 8,  period: 5,  category: "transition metal" },
+      { name: "Rhodium",     symbol: "Rh", atomicNumber: 45, group: 9,  period: 5,  category: "transition metal" },
+      { name: "Palladium",   symbol: "Pd", atomicNumber: 46, group: 10, period: 5,  category: "transition metal" },
+      { name: "Silver",      symbol: "Ag", atomicNumber: 47, group: 11, period: 5,  category: "transition metal" },
+      { name: "Cadmium",     symbol: "Cd", atomicNumber: 48, group: 12, period: 5,  category: "transition metal" },
+      { name: "Indium",      symbol: "In", atomicNumber: 49, group: 13, period: 5,  category: "metal" },
+      { name: "Tin",         symbol: "Sn", atomicNumber: 50, group: 14, period: 5,  category: "metal" },
+      { name: "Antimony",    symbol: "Sb", atomicNumber: 51, group: 15, period: 5,  category: "metalloid" },
+      { name: "Tellurium",   symbol: "Te", atomicNumber: 52, group: 16, period: 5,  category: "metalloid" },
+      { name: "Iodine",      symbol: "I",  atomicNumber: 53, group: 17, period: 5,  category: "halogen" },
+      { name: "Xenon",       symbol: "Xe", atomicNumber: 54, group: 18, period: 5,  category: "noble gas" },
+
+      // Row 6
+      { name: "Cesium",      symbol: "Cs", atomicNumber: 55, group: 1,  period: 6,  category: "alkali metal" },
+      { name: "Barium",      symbol: "Ba", atomicNumber: 56, group: 2,  period: 6,  category: "alkaline earth metal" },
+      // Lanthanides in row 8
+      { name: "Hafnium",     symbol: "Hf", atomicNumber: 72, group: 4,  period: 6,  category: "transition metal" },
+      { name: "Tantalum",    symbol: "Ta", atomicNumber: 73, group: 5,  period: 6,  category: "transition metal" },
+      { name: "Tungsten",    symbol: "W",  atomicNumber: 74, group: 6,  period: 6,  category: "transition metal" },
+      { name: "Rhenium",     symbol: "Re", atomicNumber: 75, group: 7,  period: 6,  category: "transition metal" },
+      { name: "Osmium",      symbol: "Os", atomicNumber: 76, group: 8,  period: 6,  category: "transition metal" },
+      { name: "Iridium",     symbol: "Ir", atomicNumber: 77, group: 9,  period: 6,  category: "transition metal" },
+      { name: "Platinum",    symbol: "Pt", atomicNumber: 78, group: 10, period: 6,  category: "transition metal" },
+      { name: "Gold",        symbol: "Au", atomicNumber: 79, group: 11, period: 6,  category: "transition metal" },
+      { name: "Mercury",     symbol: "Hg", atomicNumber: 80, group: 12, period: 6,  category: "transition metal" },
+      { name: "Thallium",    symbol: "Tl", atomicNumber: 81, group: 13, period: 6,  category: "metal" },
+      { name: "Lead",        symbol: "Pb", atomicNumber: 82, group: 14, period: 6,  category: "metal" },
+      { name: "Bismuth",     symbol: "Bi", atomicNumber: 83, group: 15, period: 6,  category: "metal" },
+      { name: "Polonium",    symbol: "Po", atomicNumber: 84, group: 16, period: 6,  category: "metalloid" },
+      { name: "Astatine",    symbol: "At", atomicNumber: 85, group: 17, period: 6,  category: "metalloid" },
+      { name: "Radon",       symbol: "Rn", atomicNumber: 86, group: 18, period: 6,  category: "noble gas" },
+
+      // Row 7
+      { name: "Francium",    symbol: "Fr", atomicNumber: 87,  group: 1,  period: 7,  category: "alkali metal" },
+      { name: "Radium",      symbol: "Ra", atomicNumber: 88,  group: 2,  period: 7,  category: "alkaline earth metal" },
+      // Actinides in row 9
+      { name: "Rutherfordium", symbol: "Rf", atomicNumber: 104, group: 4,  period: 7,  category: "transition metal" },
+      { name: "Dubnium",       symbol: "Db", atomicNumber: 105, group: 5,  period: 7,  category: "transition metal" },
+      { name: "Seaborgium",    symbol: "Sg", atomicNumber: 106, group: 6,  period: 7,  category: "transition metal" },
+      { name: "Bohrium",       symbol: "Bh", atomicNumber: 107, group: 7,  period: 7,  category: "transition metal" },
+      { name: "Hassium",       symbol: "Hs", atomicNumber: 108, group: 8,  period: 7,  category: "transition metal" },
+      { name: "Meitnerium",    symbol: "Mt", atomicNumber: 109, group: 9,  period: 7,  category: "transition metal" },
+      { name: "Darmstadtium",  symbol: "Ds", atomicNumber: 110, group: 10, period: 7,  category: "transition metal" },
+      { name: "Roentgenium",   symbol: "Rg", atomicNumber: 111, group: 11, period: 7,  category: "transition metal" },
+      { name: "Copernicium",   symbol: "Cn", atomicNumber: 112, group: 12, period: 7,  category: "transition metal" },
+      { name: "Nihonium",      symbol: "Nh", atomicNumber: 113, group: 13, period: 7,  category: "metal" },
+      { name: "Flerovium",     symbol: "Fl", atomicNumber: 114, group: 14, period: 7,  category: "metal" },
+      { name: "Moscovium",     symbol: "Mc", atomicNumber: 115, group: 15, period: 7,  category: "metalloid" },
+      { name: "Livermorium",   symbol: "Lv", atomicNumber: 116, group: 16, period: 7,  category: "metal" },
+      { name: "Tennessine",    symbol: "Ts", atomicNumber: 117, group: 17, period: 7,  category: "halogen" },
+      { name: "Oganesson",     symbol: "Og", atomicNumber: 118, group: 18, period: 7,  category: "noble gas" },
+
+      // Row 8 (Lanthanides, period=6, group=3)
+      { name: "Lanthanum",   symbol: "La", atomicNumber: 57, group: 3, period: 6, category: "lanthanoid" },
+      { name: "Cerium",      symbol: "Ce", atomicNumber: 58, group: 3, period: 6, category: "lanthanoid" },
+      { name: "Praseodymium",symbol: "Pr", atomicNumber: 59, group: 3, period: 6, category: "lanthanoid" },
+      { name: "Neodymium",   symbol: "Nd", atomicNumber: 60, group: 3, period: 6, category: "lanthanoid" },
+      { name: "Promethium",  symbol: "Pm", atomicNumber: 61, group: 3, period: 6, category: "lanthanoid" },
+      { name: "Samarium",    symbol: "Sm", atomicNumber: 62, group: 3, period: 6, category: "lanthanoid" },
+      { name: "Europium",    symbol: "Eu", atomicNumber: 63, group: 3, period: 6, category: "lanthanoid" },
+      { name: "Gadolinium",  symbol: "Gd", atomicNumber: 64, group: 3, period: 6, category: "lanthanoid" },
+      { name: "Terbium",     symbol: "Tb", atomicNumber: 65, group: 3, period: 6, category: "lanthanoid" },
+      { name: "Dysprosium",  symbol: "Dy", atomicNumber: 66, group: 3, period: 6, category: "lanthanoid" },
+      { name: "Holmium",     symbol: "Ho", atomicNumber: 67, group: 3, period: 6, category: "lanthanoid" },
+      { name: "Erbium",      symbol: "Er", atomicNumber: 68, group: 3, period: 6, category: "lanthanoid" },
+      { name: "Thulium",     symbol: "Tm", atomicNumber: 69, group: 3, period: 6, category: "lanthanoid" },
+      { name: "Ytterbium",   symbol: "Yb", atomicNumber: 70, group: 3, period: 6, category: "lanthanoid" },
+      { name: "Lutetium",    symbol: "Lu", atomicNumber: 71, group: 3, period: 6, category: "lanthanoid" },
+
+      // Row 9 (Actinides, period=7, group=3)
+      { name: "Actinium",    symbol: "Ac", atomicNumber: 89,  group: 3, period: 7, category: "actinoid" },
+      { name: "Thorium",     symbol: "Th", atomicNumber: 90,  group: 3, period: 7, category: "actinoid" },
+      { name: "Protactinium",symbol: "Pa", atomicNumber: 91,  group: 3, period: 7, category: "actinoid" },
+      { name: "Uranium",     symbol: "U",  atomicNumber: 92,  group: 3, period: 7, category: "actinoid" },
+      { name: "Neptunium",   symbol: "Np", atomicNumber: 93,  group: 3, period: 7, category: "actinoid" },
+      { name: "Plutonium",   symbol: "Pu", atomicNumber: 94,  group: 3, period: 7, category: "actinoid" },
+      { name: "Americium",   symbol: "Am", atomicNumber: 95,  group: 3, period: 7, category: "actinoid" },
+      { name: "Curium",      symbol: "Cm", atomicNumber: 96,  group: 3, period: 7, category: "actinoid" },
+      { name: "Berkelium",   symbol: "Bk", atomicNumber: 97,  group: 3, period: 7, category: "actinoid" },
+      { name: "Californium", symbol: "Cf", atomicNumber: 98,  group: 3, period: 7, category: "actinoid" },
+      { name: "Einsteinium", symbol: "Es", atomicNumber: 99,  group: 3, period: 7, category: "actinoid" },
+      { name: "Fermium",     symbol: "Fm", atomicNumber: 100, group: 3, period: 7, category: "actinoid" },
+      { name: "Mendelevium", symbol: "Md", atomicNumber: 101, group: 3, period: 7, category: "actinoid" },
+      { name: "Nobelium",    symbol: "No", atomicNumber: 102, group: 3, period: 7, category: "actinoid" },
+      { name: "Lawrencium",  symbol: "Lr", atomicNumber: 103, group: 3, period: 7, category: "actinoid" }
+    ];
+
+    /************************************************************************
+     * 2. TABLE POSITIONS (Long-Form Layout)
+     ************************************************************************/
+    const tablePositions = {
+      // Row 1
+      1:  {r:1, c:1},   2:  {r:1, c:18},
+
+      // Row 2
+      3:  {r:2, c:1},   4:  {r:2, c:2},   5:  {r:2, c:13}, 6:  {r:2, c:14},
+      7:  {r:2, c:15},  8:  {r:2, c:16},  9:  {r:2, c:17}, 10: {r:2, c:18},
+
+      // Row 3
+      11: {r:3, c:1},   12: {r:3, c:2},   13: {r:3, c:13}, 14: {r:3, c:14},
+      15: {r:3, c:15},  16: {r:3, c:16},  17: {r:3, c:17}, 18: {r:3, c:18},
+
+      // Row 4
+      19: {r:4, c:1},   20: {r:4, c:2},   21: {r:4, c:3},  22: {r:4, c:4},
+      23: {r:4, c:5},   24: {r:4, c:6},   25: {r:4, c:7},  26: {r:4, c:8},
+      27: {r:4, c:9},   28: {r:4, c:10},  29: {r:4, c:11}, 30: {r:4, c:12},
+      31: {r:4, c:13},  32: {r:4, c:14},  33: {r:4, c:15}, 34: {r:4, c:16},
+      35: {r:4, c:17},  36: {r:4, c:18},
+
+      // Row 5
+      37: {r:5, c:1},   38: {r:5, c:2},   39: {r:5, c:3},  40: {r:5, c:4},
+      41: {r:5, c:5},   42: {r:5, c:6},   43: {r:5, c:7},  44: {r:5, c:8},
+      45: {r:5, c:9},   46: {r:5, c:10},  47: {r:5, c:11}, 48: {r:5, c:12},
+      49: {r:5, c:13},  50: {r:5, c:14},  51: {r:5, c:15}, 52: {r:5, c:16},
+      53: {r:5, c:17},  54: {r:5, c:18},
+
+      // Row 6
+      55: {r:6, c:1},   56: {r:6, c:2},   72: {r:6, c:4},  73: {r:6, c:5},
+      74: {r:6, c:6},   75: {r:6, c:7},   76: {r:6, c:8},  77: {r:6, c:9},
+      78: {r:6, c:10},  79: {r:6, c:11},  80: {r:6, c:12}, 81: {r:6, c:13},
+      82: {r:6, c:14},  83: {r:6, c:15},  84: {r:6, c:16}, 85: {r:6, c:17},
+      86: {r:6, c:18},
+
+      // Row 7
+      87: {r:7, c:1},   88: {r:7, c:2},   104:{r:7, c:4},  105:{r:7, c:5},
+      106:{r:7, c:6},   107:{r:7, c:7},   108:{r:7, c:8},  109:{r:7, c:9},
+      110:{r:7, c:10},  111:{r:7, c:11},  112:{r:7, c:12}, 113:{r:7, c:13},
+      114:{r:7, c:14},  115:{r:7, c:15},  116:{r:7, c:16}, 117:{r:7, c:17},
+      118:{r:7, c:18},
+
+      // Row 8 (Lanthanides)
+      57: {r:8, c:3},   58: {r:8, c:4},   59: {r:8, c:5},  60: {r:8, c:6},
+      61: {r:8, c:7},   62: {r:8, c:8},   63: {r:8, c:9},  64: {r:8, c:10},
+      65: {r:8, c:11},  66: {r:8, c:12},  67: {r:8, c:13}, 68: {r:8, c:14},
+      69: {r:8, c:15},  70: {r:8, c:16},  71: {r:8, c:17},
+
+      // Row 9 (Actinides)
+      89:  {r:9, c:3},  90:  {r:9, c:4},  91:  {r:9, c:5},  92:  {r:9, c:6},
+      93:  {r:9, c:7},  94:  {r:9, c:8},  95:  {r:9, c:9},  96:  {r:9, c:10},
+      97:  {r:9, c:11}, 98:  {r:9, c:12}, 99:  {r:9, c:13}, 100: {r:9, c:14},
+      101: {r:9, c:15}, 102: {r:9, c:16}, 103: {r:9, c:17}
+    };
+
+    /************************************************************************
+     * 3. CATEGORY ADJACENCY & COLOR MAPPING
+     ************************************************************************/
+    const CATEGORY_ADJACENCY = {
+      "alkali metal":            ["alkaline earth metal"],
+      "alkaline earth metal":    ["alkali metal", "transition metal"],
+      "transition metal":        ["alkaline earth metal", "metal", "lanthanoid", "actinoid"],
+      "lanthanoid":              ["transition metal"],
+      "actinoid":                ["transition metal"],
+      "metal":                   ["transition metal", "metalloid"],
+      "metalloid":               ["metal", "nonmetal"],
+      "nonmetal":                ["metalloid", "halogen"],
+      "halogen":                 ["nonmetal", "noble gas"],
+      "noble gas":               ["halogen"]
+    };
+
+    const colorMap = {
+      "alkali metal":            "#ff9999",
+      "alkaline earth metal":    "#ffcc99",
+      "transition metal":        "#ffff99",
+      "lanthanoid":              "#ccff99",
+      "actinoid":                "#99ff99",
+      "metal":                   "#99ffff",
+      "metalloid":               "#9999ff",
+      "nonmetal":                "#ff99ff",
+      "halogen":                 "#ff99cc",
+      "noble gas":               "#ccccff"
+    };
+
+    function getCategoryColor(category) {
+      return colorMap[category] || "gray";
+    }
+
+    // BFS to measure adjacency distance
+    function getCategoryDistance(guessCat, answerCat) {
+      if (guessCat === answerCat) return 0;
+      let queue = [guessCat];
+      let visited = new Set([guessCat]);
+      let distance = 0;
+      while (queue.length > 0) {
+        distance++;
+        let nextQueue = [];
+        for (const cat of queue) {
+          const neighbors = CATEGORY_ADJACENCY[cat] || [];
+          for (const n of neighbors) {
+            if (n === answerCat) return distance;
+            if (!visited.has(n)) {
+              visited.add(n);
+              nextQueue.push(n);
+            }
+          }
+        }
+        queue = nextQueue;
+        if (distance > 10) break; // safety net
+      }
+      return 999;
+    }
+
+    // Classify: metal / metalloid / nonmetal
+    function getClassification(element) {
+      const metals = ["alkali metal", "alkaline earth metal", "transition metal", "lanthanoid", "actinoid", "metal"];
+      if (metals.includes(element.category)) return "metal";
+      if (element.category === "metalloid")    return "metalloid";
+      return "nonmetal";
+    }
+
+    /************************************************************************
+     * 4. DAILY PUZZLE: Everyone sees the same puzzle for a given day
+     ************************************************************************/
+    function getDailyIndex(validCount) {
+      // # of days since epoch
+      const today = Math.floor(Date.now() / (24 * 60 * 60 * 1000));
+      return today % validCount;
+    }
+
+    /************************************************************************
+     * 5. GAME SETUP
+     ************************************************************************/
+    // Filter only elements we have table positions for
+    const validElements = elements.filter(e => tablePositions[e.atomicNumber]);
+    // Deterministic daily puzzle
+    const dailyIndex = getDailyIndex(validElements.length);
+    const answer = validElements[dailyIndex];
+
+    let attempts = 0;
+    const maxAttempts = 6;
+    let guessHistory = [];
+    let gameOver = false;
+
+    // Stats
+    let stats = {
+      gamesPlayed: 0,
+      gamesWon: 0,
+      currentStreak: 0,
+      maxStreak: 0
+    };
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadStatsFromStorage();
+
+      // Populate datalist
+      const dataList = document.getElementById('elementNames');
+      validElements.forEach(e => {
+        const opt = document.createElement('option');
+        opt.value = e.name;
+        dataList.appendChild(opt);
+      });
+
+      renderTable();
+    });
+
+    function renderTable() {
+      const tableDiv = document.getElementById("periodicTable");
+      validElements.forEach(e => {
+        const pos = tablePositions[e.atomicNumber];
+        if (!pos) return;
+        const square = document.createElement('div');
+        square.classList.add('element-square');
+        square.dataset.atomicNumber = e.atomicNumber;
+        square.style.gridRow = pos.r;
+        square.style.gridColumn = pos.c;
+        
+        if (e.atomicNumber === answer.atomicNumber) {
+          // The hidden daily answer, black out
+          square.classList.add('answer-square');
+          square.style.backgroundColor = "black";
+        } else {
+          square.style.backgroundColor = getCategoryColor(e.category);
+        }
+        tableDiv.appendChild(square);
+      });
+    }
+
+    /************************************************************************
+     * 6. GUESS LOGIC
+     ************************************************************************/
+    function submitGuess() {
+      if (gameOver) return;
+
+      const guessInput = document.getElementById('guessInput');
+      const guessName = guessInput.value.trim();
+      if (!guessName) return;
+      attempts++;
+
+      const guessedElement = validElements.find(
+        e => e.name.toLowerCase() === guessName.toLowerCase()
+      );
+      if (!guessedElement) {
+        document.getElementById('message').textContent = "Element not found (or not in the table)!";
+        return;
+      }
+
+      // Build feedback
+      const numberHint = getNumberHint(guessedElement.atomicNumber, answer.atomicNumber);
+      const numberColor = getNumberColor(guessedElement.atomicNumber, answer.atomicNumber);
+      const distance    = getCategoryDistance(guessedElement.category, answer.category);
+      let symbolColor   = "wrong";
+      if (distance === 0) symbolColor = "correct";
+      else if (distance === 1) symbolColor = "orange";
+      else if (distance === 2) symbolColor = "yellow";
+
+      const groupDiff   = Math.abs(guessedElement.group - answer.group);
+      const groupColor  = getCloseColor(groupDiff);
+
+      const periodDiff  = Math.abs(guessedElement.period - answer.period);
+      const periodColor = getCloseColor(periodDiff);
+
+      // Classification feedback
+      const guessClass  = getClassification(guessedElement);
+      const answerClass = getClassification(answer);
+      let classColor    = "wrong";
+      if (guessClass === answerClass) {
+        classColor = "correct";
+      } else if (
+        (guessClass === "metal" && answerClass === "metalloid") ||
+        (guessClass === "metalloid" && answerClass === "metal") ||
+        (guessClass === "metalloid" && answerClass === "nonmetal") ||
+        (guessClass === "nonmetal" && answerClass === "metalloid")
+      ) {
+        classColor = "orange";
+      }
+
+      const feedback = { numberHint, numberColor, symbolColor, groupColor, periodColor, classColor };
+      guessHistory.push({ guessObj: guessedElement, feedback });
+      addRowFeedback(guessedElement, feedback);
+
+      if (guessedElement.atomicNumber !== answer.atomicNumber) {
+        markWrongGuess(guessedElement);
+      }
+
+      // Check win/lose
+      if (guessedElement.atomicNumber === answer.atomicNumber) {
+        gameOver = true;
+        document.getElementById('message').textContent = `Correct! The element was ${answer.name}.`;
+        guessInput.disabled = true;
+        colorAnswerSquareGreen();
+        revealAllSquares(true);
+        showShareButton();
+        showElementInfo(answer);
+        updateStats(true);
+      } else if (attempts >= maxAttempts) {
+        gameOver = true;
+        document.getElementById('message').textContent = `Out of tries! The correct element was ${answer.name}.`;
+        guessInput.disabled = true;
+        revealAllSquares(false);
+        showShareButton();
+        showElementInfo(answer);
+        updateStats(false);
+      } else {
+        document.getElementById('message').textContent = `Try #${attempts} of ${maxAttempts}. Keep guessing!`;
+      }
+
+      guessInput.value = "";
+      guessInput.focus();
+    }
+
+    function addRowFeedback(guessObj, fb) {
+      const rowDiv = document.createElement('div');
+      rowDiv.className = 'row';
+
+      const nameCell = document.createElement('div');
+      nameCell.className = 'cell';
+      nameCell.textContent = guessObj.name;
+      rowDiv.appendChild(nameCell);
+
+      const symbolCell = document.createElement('div');
+      symbolCell.className = 'cell ' + fb.symbolColor;
+      symbolCell.textContent = guessObj.symbol;
+      rowDiv.appendChild(symbolCell);
+
+      const numberCell = document.createElement('div');
+      numberCell.className = 'cell ' + fb.numberColor;
+      numberCell.textContent = fb.numberHint;
+      rowDiv.appendChild(numberCell);
+
+      const groupCell = document.createElement('div');
+      groupCell.className = 'cell ' + fb.groupColor;
+      groupCell.textContent = "G" + guessObj.group;
+      rowDiv.appendChild(groupCell);
+
+      const periodCell = document.createElement('div');
+      periodCell.className = 'cell ' + fb.periodColor;
+      periodCell.textContent = "P" + guessObj.period;
+      rowDiv.appendChild(periodCell);
+
+      const classCell = document.createElement('div');
+      classCell.className = 'cell ' + fb.classColor;
+      classCell.textContent = getClassification(guessObj);
+      rowDiv.appendChild(classCell);
+
+      document.getElementById('game').appendChild(rowDiv);
+    }
+
+    function markWrongGuess(guessObj) {
+      const sel = `#periodicTable .element-square[data-atomic-number="${guessObj.atomicNumber}"]`;
+      const square = document.querySelector(sel);
+      if (square && !square.classList.contains('answer-square')) {
+        // Label it with symbol and atomic number
+        square.style.fontSize = '10px';
+        square.style.color = 'black';
+        square.style.textAlign = 'center';
+        square.style.display = 'flex';
+        square.style.flexDirection = 'column';
+        square.style.justifyContent = 'center';
+        square.innerHTML = `${guessObj.symbol}<br>${guessObj.atomicNumber}`;
+      }
+    }
+
+    function colorAnswerSquareGreen() {
+      const sel = `#periodicTable .element-square[data-atomic-number="${answer.atomicNumber}"]`;
+      const ansSquare = document.querySelector(sel);
+      if (!ansSquare) return;
+      ansSquare.classList.remove('answer-square');
+      ansSquare.style.backgroundColor = '#6aaa64';
+      ansSquare.style.color = 'white';
+      ansSquare.style.fontSize = '10px';
+      ansSquare.style.textAlign = 'center';
+      ansSquare.style.display = 'flex';
+      ansSquare.style.flexDirection = 'column';
+      ansSquare.style.justifyContent = 'center';
+      ansSquare.innerHTML = `${answer.symbol}<br>${answer.atomicNumber}`;
+    }
+
+    // ----- IMPORTANT CHANGE: Force the answer's text to be white on reveal if lost -----
+    function revealAllSquares(solved) {
+      validElements.forEach(e => {
+        const sel = `#periodicTable .element-square[data-atomic-number="${e.atomicNumber}"]`;
+        const sq = document.querySelector(sel);
+        if (!sq) return;
+        // If still empty, reveal
+        if (!sq.innerHTML.trim()) {
+          sq.style.fontSize = '10px';
+          sq.style.display = 'flex';
+          sq.style.flexDirection = 'column';
+          sq.style.justifyContent = 'center';
+          sq.innerHTML = `${e.symbol}<br>${e.atomicNumber}`;
+          sq.style.color = 'black';
+
+          // If this is the hidden answer, make the text white for visibility
+          if (e.atomicNumber === answer.atomicNumber) {
+            sq.style.color = 'white';
+          }
+        }
+      });
+    }
+
+    /************************************************************************
+     * 7. SHARE RESULTS
+     ************************************************************************/
+    function showShareButton() {
+      if (document.getElementById("shareButton")) return;
+      const btn = document.createElement('button');
+      btn.id = "shareButton";
+      btn.textContent = "Share Results";
+      btn.addEventListener('click', shareResults);
+      document.getElementById('message').appendChild(btn);
+    }
+
+    function shareResults() {
+      let summary = `Elementle ${attempts <= maxAttempts ? attempts : "X"}/${maxAttempts}\n\n`;
+      guessHistory.forEach(data => {
+        const fb = data.feedback;
+        let numberEmoji = fb.numberColor === "correct" ? "🟩"
+                        : fb.numberHint.includes("↓") ? "⬇️"
+                        : fb.numberHint.includes("↑") ? "⬆️"
+                        : "⬜";
+        let symbolEmoji = fb.symbolColor === "correct" ? "🟩"
+                        : fb.symbolColor === "orange" ? "🟧"
+                        : fb.symbolColor === "yellow" ? "🟨"
+                        : "⬜";
+        let groupEmoji = fb.groupColor === "correct" ? "🟩"
+                       : fb.groupColor === "orange" ? "🟧"
+                       : fb.groupColor === "yellow" ? "🟨"
+                       : "⬜";
+        let periodEmoji = fb.periodColor === "correct" ? "🟩"
+                        : fb.periodColor === "orange" ? "🟧"
+                        : fb.periodColor === "yellow" ? "🟨"
+                        : "⬜";
+        let classEmoji = fb.classColor === "correct" ? "🟩"
+                       : fb.classColor === "orange" ? "🟧"
+                       : "⬜";
+
+        summary += `${numberEmoji}${symbolEmoji}${groupEmoji}${periodEmoji}${classEmoji}\n`;
+      });
+      summary += `\nPlay here: (Your Hosted URL)\n`;
+
+      try {
+        navigator.clipboard.writeText(summary).then(() => {
+          alert("Results copied to clipboard!");
+        });
+      } catch (err) {
+        console.error("Clipboard error:", err);
+        alert("Unable to copy automatically, please copy manually:\n\n" + summary);
+      }
+    }
+
+    /************************************************************************
+     * 8. OPTIONAL EDUCATIONAL CONTENT
+     ************************************************************************/
+    function showElementInfo(element) {
+      const info = `Fun Fact about ${element.name}: It belongs to the "${element.category}" category!`;
+      const infoDiv = document.createElement('div');
+      infoDiv.textContent = info;
+      infoDiv.style.marginTop = '10px';
+      document.getElementById('message').appendChild(infoDiv);
+    }
+
+    /************************************************************************
+     * 9. STATS & LOCAL STORAGE
+     ************************************************************************/
+    function loadStatsFromStorage() {
+      const data = localStorage.getItem("elementleStats");
+      if (data) {
+        stats = JSON.parse(data);
+      }
+    }
+
+    function saveStatsToStorage() {
+      localStorage.setItem("elementleStats", JSON.stringify(stats));
+    }
+
+    function updateStats(won) {
+      stats.gamesPlayed++;
+      if (won) {
+        stats.gamesWon++;
+        stats.currentStreak++;
+        if (stats.currentStreak > stats.maxStreak) {
+          stats.maxStreak = stats.currentStreak;
+        }
+      } else {
+        // reset streak
+        stats.currentStreak = 0;
+      }
+      saveStatsToStorage();
+    }
+
+    /************************************************************************
+     * 10. STATS MODAL
+     ************************************************************************/
+    function openStats() {
+      updateStatsUI();
+      document.getElementById("statsModal").style.display = "flex";
+    }
+
+    function closeStats() {
+      document.getElementById("statsModal").style.display = "none";
+    }
+
+    function updateStatsUI() {
+      document.getElementById("gamesPlayed").textContent = "Games played: " + stats.gamesPlayed;
+      document.getElementById("gamesWon").textContent = "Games won: " + stats.gamesWon;
+      document.getElementById("currentStreak").textContent = "Current streak: " + stats.currentStreak;
+      document.getElementById("maxStreak").textContent = "Max streak: " + stats.maxStreak;
+    }
+
+    /************************************************************************
+     * 11. COLOR-BLIND MODE
+     ************************************************************************/
+    function toggleColorBlindMode() {
+      const cbToggle = document.getElementById("colorBlindToggle");
+      if (cbToggle.checked) {
+        document.body.classList.add("color-blind");
+      } else {
+        document.body.classList.remove("color-blind");
+      }
+    }
+
+    /************************************************************************
+     * HELPER FUNCTIONS
+     ************************************************************************/
+    function getNumberHint(guessNum, ansNum) {
+      if (guessNum === ansNum) return guessNum + " =";
+      return guessNum + (guessNum < ansNum ? " ↑" : " ↓");
+    }
+
+    function getNumberColor(guessNum, ansNum) {
+      if (guessNum === ansNum) return "correct";
+      const diff = Math.abs(guessNum - ansNum);
+      if (diff <= 2)  return "orange";
+      if (diff <= 10) return "yellow";
+      return "wrong";
+    }
+
+    function getCloseColor(diff) {
+      if (diff === 0) return "correct";
+      if (diff === 1) return "orange";
+      if (diff === 2) return "yellow";
+      return "wrong";
+    }
+  </script>
+</body>
+</html>
