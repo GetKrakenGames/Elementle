@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Elemental</title>
+  <style>
+    /***********************************************************************
+     * Basic Page & Layout Styling (Dark Mode)
+     ***********************************************************************/
+    body {
+      background-color: #121212; /* dark background */
+      color: #e0e0e0;            /* light text */
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 20px;
+    }
+
+    /* Periodic table container */
+    #periodicTable {
+      margin: 0 auto 20px auto;
+      display: grid;
+      /* 9 total rows (1–7 for main table, 8=lanthanides, 9=actinides) */
+      grid-template-rows: repeat(9, 30px);
+      /* 18 columns (groups 1–18) */
+      grid-template-columns: repeat(18, 30px);
+      gap: 3px;
+      justify-content: center;
+      background-color: #121212;
+    }
+
+    .element-square {
+      width: 30px;
+      height: 30px;
+      background-color: gray;
+    }
+
+    /* The puzzle element. We don't force black so we can animate it. */
+    .answer-square { /* intentionally empty */ }
+
+    /* Animate the hidden puzzle element with a color cycle */
+    @keyframes mysteryPulse {
+      0%   { background-color: #ff9999; }
+      10%  { background-color: #ffcc99; }
+      20%  { background-color: #ffff99; }
+      30%  { background-color: #ccff99; }
+      40%  { background-color: #99ff99; }
+      50%  { background-color: #99ffff; }
+      60%  { background-color: #9999ff; }
+      70%  { background-color: #ff99ff; }
+      80%  { background-color: #ff99cc; }
+      90%  { background-color: #ccccff; }
+      100% { background-color: #ff9999; }
+    }
+
+    /* Mystery element has a color-cycling animation plus an inset frame. */
+    .mystery-animate {
+      animation: mysteryPulse 6s linear infinite;
+      color: black; 
+      box-sizing: border-box;
+      border: none;
+      outline: none;
+      /* Your custom inner lines: 2px white inside 4px black. */
+      box-shadow:
+        inset 0 0 0 2px white,
+        inset 0 0 0 4px black;
+    }
+
+    /* When the game ends, we keep a frame on the mystery element. */
+    .mystery-frame {
+      box-sizing: border-box;
+      border: none;
+      outline: none;
+      box-shadow:
+        inset 0 0 0 2px white,
+        inset 0 0 0 4px black;
+    }
+
+    /* Table for guess feedback */
+    #game {
+      margin: 20px auto;
+      max-width: 720px;
+    }
+    .row {
+      display: flex;
+      justify-content: center;
+      margin: 5px 0;
+    }
+    .cell {
+      width: 120px;
+      height: 40px;
+      margin: 2px;
+      border: 1px solid #444;
+      background-color: #333;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+
+    /* Input row */
+    #input {
+      margin: 20px 0;
+    }
+    #guessInput {
+      background-color: #333;
+      color: #fff;
+      border: 1px solid #555;
+      padding: 5px;
+    }
+    button {
+      background-color: #333;
+      color: #fff;
+      border: 1px solid #555;
+      padding: 5px 10px;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #444;
+    }
+
+    #message {
+      font-size: 18px;
+      margin-top: 10px;
+      color: #e0e0e0;
+    }
+
+    /***********************************************************************
+     * Feedback Colors
+     ***********************************************************************/
+    .correct {
+      background-color: #6aaa64; /* green */
+      color: white;
+    }
+    .wrong {
+      background-color: #787c7e; /* gray */
+      color: white;
+    }
+    .orange {
+      background-color: orange;
+      color: black;
+    }
+    .yellow {
+      background-color: yellow;
+      color: black;
+    }
+
+    /***********************************************************************
+     * Share Button
+     ***********************************************************************/
+    #shareButton {
+      margin-top: 20px;
+    }
+
+    /***********************************************************************
+     * Stats Modal
+     ***********************************************************************/
+    #statsModal {
+      position: fixed;
+      display: none; /* hidden by default */
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: rgba(0, 0, 0, 0.5);
+      justify-content: center;
+      align-items: center;
+    }
+    #statsContent {
+      background: #2a2a2a;
+      color: #fff;
+      padding: 20px;
+      border-radius: 5px;
+      width: 300px;
+      margin: 0 auto;
+    }
+
+    /***********************************************************************
+     * Hard Mode
+     *   In Hard Mode, squares that are NOT revealed remain gray.
+     ***********************************************************************/
+    .hard-mode .element-square:not(.revealed):not(.answer-square) {
+      background-color: gray !important;
+    }
+  </style>
+</head>
+<body>
+  <h1>Elemental</h1>
+  <p>
+    Guess the daily element in 6 tries!
+    <br>
+    • Atomic # (↑ or ↓)
+    <br>
+    • Symbol cell color indicates <strong>category</strong> proximity (green/orange/yellow/gray).
+    <br>
+    • Group, Period, and Type (Metal/Nonmetal/Metalloid) distances shown.
+  </p>
+
+  <!-- Toggle Hard Mode -->
+  <label style="color: #e0e0e0;">
+    <input type="checkbox" id="hardModeToggle" onclick="toggleHardMode()">
+    Hard Mode
+  </label>
+  <br><br>
+
+  <div id="periodicTable"></div>
+  <div id="game"></div>
+
+  <div id="input">
+    <input type="text" id="guessInput" placeholder="Enter element name" list="elementNames">
+    <button onclick="submitGuess()">Submit</button>
+    <datalist id="elementNames"></datalist>
+  </div>
+
+  <div id="message"></div>
+  <button onclick="openStats()">Show Stats</button>
+
+  <!-- Stats Modal -->
+  <div id="statsModal">
+    <div id="statsContent">
+      <h2>Your Stats</h2>
+      <p id="gamesPlayed">Games played: 0</p>
+      <p id="gamesWon">Games won: 0</p>
+      <p id="currentStreak">Current streak: 0</p>
+      <p id="maxStreak">Max streak: 0</p>
+      <button onclick="closeStats()">Close</button>
+    </div>
+  </div>
+
+  <script>
+    /*************************************************************************
+     * 1. FULL PERIODIC TABLE DATA (All 118), with updated categories
+     *************************************************************************/
+    const elements = [
+      { name: "Hydrogen",  symbol: "H",  atomicNumber: 1,  group: 1,  period: 1,  category: "reactive nonmetals" },
+      { name: "Helium",    symbol: "He", atomicNumber: 2,  group: 18, period: 1,  category: "noble gases" },
+      { name: "Lithium",   symbol: "Li", atomicNumber: 3,  group: 1,  period: 2,  category: "alkali metals" },
+      { name: "Beryllium", symbol: "Be", atomicNumber: 4,  group: 2,  period: 2,  category: "alkaline earth metals" },
+      { name: "Boron",     symbol: "B",  atomicNumber: 5,  group: 13, period: 2,  category: "metalloids" },
+      { name: "Carbon",    symbol: "C",  atomicNumber: 6,  group: 14, period: 2,  category: "reactive nonmetals" },
+      { name: "Nitrogen",  symbol: "N",  atomicNumber: 7,  group: 15, period: 2,  category: "reactive nonmetals" },
+      { name: "Oxygen",    symbol: "O",  atomicNumber: 8,  group: 16, period: 2,  category: "reactive nonmetals" },
+      { name: "Fluorine",  symbol: "F",  atomicNumber: 9,  group: 17, period: 2,  category: "halogens" },
+      { name: "Neon",      symbol: "Ne", atomicNumber: 10, group: 18, period: 2,  category: "noble gases" },
+      { name: "Sodium",    symbol: "Na", atomicNumber: 11, group: 1,  period: 3,  category: "alkali metals" },
+      { name: "Magnesium", symbol: "Mg", atomicNumber: 12, group: 2,  period: 3,  category: "alkaline earth metals" },
+      { name: "Aluminum",  symbol: "Al", atomicNumber: 13, group: 13, period: 3,  category: "post-transition metals" },
+      { name: "Silicon",   symbol: "Si", atomicNumber: 14, group: 14, period: 3,  category: "metalloids" },
+      { name: "Phosphorus",symbol: "P",  atomicNumber: 15, group: 15, period: 3,  category: "reactive nonmetals" },
+      { name: "Sulfur",    symbol: "S",  atomicNumber: 16, group: 16, period: 3,  category: "reactive nonmetals" },
+      { name: "Chlorine",  symbol: "Cl", atomicNumber: 17, group: 17, period: 3,  category: "halogens" },
+      { name: "Argon",     symbol: "Ar", atomicNumber: 18, group: 18, period: 3,  category: "noble gases" },
+      { name: "Potassium", symbol: "K",  atomicNumber: 19, group: 1,  period: 4,  category: "alkali metals" },
+      { name: "Calcium",   symbol: "Ca", atomicNumber: 20, group: 2,  period: 4,  category: "alkaline earth metals" },
+      { name: "Scandium",  symbol: "Sc", atomicNumber: 21, group: 3,  period: 4,  category: "transition metals" },
+      { name: "Titanium",  symbol: "Ti", atomicNumber: 22, group: 4,  period: 4,  category: "transition metals" },
+      { name: "Vanadium",  symbol: "V",  atomicNumber: 23, group: 5,  period: 4,  category: "transition metals" },
+      { name: "Chromium",  symbol: "Cr", atomicNumber: 24, group: 6,  period: 4,  category: "transition metals" },
+      { name: "Manganese", symbol: "Mn", atomicNumber: 25, group: 7,  period: 4,  category: "transition metals" },
+      { name: "Iron",      symbol: "Fe", atomicNumber: 26, group: 8,  period: 4,  category: "transition metals" },
+      { name: "Cobalt",    symbol: "Co", atomicNumber: 27, group: 9,  period: 4,  category: "transition metals" },
+      { name: "Nickel",    symbol: "Ni", atomicNumber: 28, group: 10, period: 4,  category: "transition metals" },
+      { name: "Copper",    symbol: "Cu", atomicNumber: 29, group: 11, period: 4,  category: "transition metals" },
+      { name: "Zinc",      symbol: "Zn", atomicNumber: 30, group: 12, period: 4,  category: "transition metals" },
+      { name: "Gallium",   symbol: "Ga", atomicNumber: 31, group: 13, period: 4,  category: "post-transition metals" },
+      { name: "Germanium", symbol: "Ge", atomicNumber: 32, group: 14, period: 4,  category: "metalloids" },
+      { name: "Arsenic",   symbol: "As", atomicNumber: 33, group: 15, period: 4,  category: "metalloids" },
+      { name: "Selenium",  symbol: "Se", atomicNumber: 34, group: 16, period: 4,  category: "reactive nonmetals" },
+      { name: "Bromine",   symbol: "Br", atomicNumber: 35, group: 17, period: 4,  category: "halogens" },
+      { name: "Krypton",   symbol: "Kr", atomicNumber: 36, group: 18, period: 4,  category: "noble gases" },
+      { name: "Rubidium",  symbol: "Rb", atomicNumber: 37, group: 1,  period: 5,  category: "alkali metals" },
+      { name: "Strontium", symbol: "Sr", atomicNumber: 38, group: 2,  period: 5,  category: "alkaline earth metals" },
+      { name: "Yttrium",   symbol: "Y",  atomicNumber: 39, group: 3,  period: 5,  category: "transition metals" },
+      { name: "Zirconium", symbol: "Zr", atomicNumber: 40, group: 4,  period: 5,  category: "transition metals" },
+      { name: "Niobium",   symbol: "Nb", atomicNumber: 41, group: 5,  period: 5,  category: "transition metals" },
+      { name: "Molybdenum",symbol: "Mo", atomicNumber: 42, group: 6,  period: 5,  category: "transition metals" },
+      { name: "Technetium",symbol: "Tc", atomicNumber: 43, group: 7,  period: 5,  category: "transition metals" },
+      { name: "Ruthenium", symbol: "Ru", atomicNumber: 44, group: 8,  period: 5,  category: "transition metals" },
+      { name: "Rhodium",   symbol: "Rh", atomicNumber: 45, group: 9,  period: 5,  category: "transition metals" },
+      { name: "Palladium", symbol: "Pd", atomicNumber: 46, group: 10, period: 5,  category: "transition metals" },
+      { name: "Silver",    symbol: "Ag", atomicNumber: 47, group: 11, period: 5,  category: "transition metals" },
+      { name: "Cadmium",   symbol: "Cd", atomicNumber: 48, group: 12, period: 5,  category: "transition metals" },
+      { name: "Indium",    symbol: "In", atomicNumber: 49, group: 13, period: 5,  category: "post-transition metals" },
+      { name: "Tin",       symbol: "Sn", atomicNumber: 50, group: 14, period: 5,  category: "post-transition metals" },
+      { name: "Antimony",  symbol: "Sb", atomicNumber: 51, group: 15, period: 5,  category: "metalloids" },
+      { name: "Tellurium", symbol: "Te", atomicNumber: 52, group: 16, period: 5,  category: "metalloids" },
+      { name: "Iodine",    symbol: "I",  atomicNumber: 53, group: 17, period: 5,  category: "halogens" },
+      { name: "Xenon",     symbol: "Xe", atomicNumber: 54, group: 18, period: 5,  category: "noble gases" },
+      { name: "Cesium",    symbol: "Cs", atomicNumber: 55, group: 1,  period: 6,  category: "alkali metals" },
+      { name: "Barium",    symbol: "Ba", atomicNumber: 56, group: 2,  period: 6,  category: "alkaline earth metals" },
+      /* Lanthanides (Row 8) */
+      { name: "Hafnium",   symbol: "Hf", atomicNumber: 72, group: 4, period: 6, category: "transition metals" },
+      { name: "Tantalum",  symbol: "Ta", atomicNumber: 73, group: 5, period: 6, category: "transition metals" },
+      { name: "Tungsten",  symbol: "W",  atomicNumber: 74, group: 6, period: 6, category: "transition metals" },
+      { name: "Rhenium",   symbol: "Re", atomicNumber: 75, group: 7, period: 6, category: "transition metals" },
+      { name: "Osmium",    symbol: "Os", atomicNumber: 76, group: 8, period: 6, category: "transition metals" },
+      { name: "Iridium",   symbol: "Ir", atomicNumber: 77, group: 9, period: 6, category: "transition metals" },
+      { name: "Platinum",  symbol: "Pt", atomicNumber: 78, group: 10,period: 6, category: "transition metals" },
+      { name: "Gold",      symbol: "Au", atomicNumber: 79, group: 11,period: 6, category: "transition metals" },
+      { name: "Mercury",   symbol: "Hg", atomicNumber: 80, group: 12,period: 6, category: "transition metals" },
+      { name: "Thallium",  symbol: "Tl", atomicNumber: 81, group: 13,period: 6, category: "post-transition metals" },
+      { name: "Lead",      symbol: "Pb", atomicNumber: 82, group: 14,period: 6, category: "post-transition metals" },
+      { name: "Bismuth",   symbol: "Bi", atomicNumber: 83, group: 15,period: 6, category: "post-transition metals" },
+      { name: "Polonium",  symbol: "Po", atomicNumber: 84, group: 16,period: 6, category: "post-transition metals" },
+      { name: "Astatine",  symbol: "At", atomicNumber: 85, group: 17,period: 6, category: "halogens" },
+      { name: "Radon",     symbol: "Rn", atomicNumber: 86, group: 18,period: 6, category: "noble gases" },
+      /* Row 7 */
+      { name: "Francium",  symbol: "Fr", atomicNumber: 87,  group: 1,  period: 7, category: "alkali metals" },
+      { name: "Radium",    symbol: "Ra", atomicNumber: 88,  group: 2,  period: 7, category: "alkaline earth metals" },
+      /* Actinides (Row 9) */
+      { name: "Rutherfordium", symbol: "Rf", atomicNumber: 104, group: 4, period: 7, category: "transition metals" },
+      { name: "Dubnium",       symbol: "Db", atomicNumber: 105, group: 5, period: 7, category: "transition metals" },
+      { name: "Seaborgium",    symbol: "Sg", atomicNumber: 106, group: 6, period: 7, category: "transition metals" },
+      { name: "Bohrium",       symbol: "Bh", atomicNumber: 107, group: 7, period: 7, category: "transition metals" },
+      { name: "Hassium",       symbol: "Hs", atomicNumber: 108, group: 8, period: 7, category: "transition metals" },
+      { name: "Meitnerium",    symbol: "Mt", atomicNumber: 109, group: 9, period: 7, category: "transition metals" },
+      { name: "Darmstadtium",  symbol: "Ds", atomicNumber: 110, group: 10,period: 7, category: "transition metals" },
+      { name: "Roentgenium",   symbol: "Rg", atomicNumber: 111, group: 11,period: 7, category: "transition metals" },
+      { name: "Copernicium",   symbol: "Cn", atomicNumber: 112, group: 12,period: 7, category: "transition metals" },
+      { name: "Nihonium",      symbol: "Nh", atomicNumber: 113, group: 13,period: 7, category: "post-transition metals" },
+      { name: "Flerovium",     symbol: "Fl", atomicNumber: 114, group: 14,period: 7, category: "post-transition metals" },
+      { name: "Moscovium",     symbol: "Mc", atomicNumber: 115, group: 15,period: 7, category: "post-transition metals" },
+      { name: "Livermorium",   symbol: "Lv", atomicNumber: 116, group: 16,period: 7, category: "post-transition metals" },
+      { name: "Tennessine",    symbol: "Ts", atomicNumber: 117, group: 17,period: 7, category: "halogens" },
+      { name: "Oganesson",     symbol: "Og", atomicNumber: 118, group: 18,period: 7, category: "noble gases" },
+
+      /* Row 8 (Lanthanides) */
+      { name: "Lanthanum",   symbol: "La", atomicNumber: 57, group: 3, period: 6, category: "lanthanides" },
+      { name: "Cerium",      symbol: "Ce", atomicNumber: 58, group: 3, period: 6, category: "lanthanides" },
+      { name: "Praseodymium",symbol: "Pr", atomicNumber: 59, group: 3, period: 6, category: "lanthanides" },
+      { name: "Neodymium",   symbol: "Nd", atomicNumber: 60, group: 3, period: 6, category: "lanthanides" },
+      { name: "Promethium",  symbol: "Pm", atomicNumber: 61, group: 3, period: 6, category: "lanthanides" },
+      { name: "Samarium",    symbol: "Sm", atomicNumber: 62, group: 3, period: 6, category: "lanthanides" },
+      { name: "Europium",    symbol: "Eu", atomicNumber: 63, group: 3, period: 6, category: "lanthanides" },
+      { name: "Gadolinium",  symbol: "Gd", atomicNumber: 64, group: 3, period: 6, category: "lanthanides" },
+      { name: "Terbium",     symbol: "Tb", atomicNumber: 65, group: 3, period: 6, category: "lanthanides" },
+      { name: "Dysprosium",  symbol: "Dy", atomicNumber: 66, group: 3, period: 6, category: "lanthanides" },
+      { name: "Holmium",     symbol: "Ho", atomicNumber: 67, group: 3, period: 6, category: "lanthanides" },
+      { name: "Erbium",      symbol: "Er", atomicNumber: 68, group: 3, period: 6, category: "lanthanides" },
+      { name: "Thulium",     symbol: "Tm", atomicNumber: 69, group: 3, period: 6, category: "lanthanides" },
+      { name: "Ytterbium",   symbol: "Yb", atomicNumber: 70, group: 3, period: 6, category: "lanthanides" },
+      { name: "Lutetium",    symbol: "Lu", atomicNumber: 71, group: 3, period: 6, category: "lanthanides" },
+
+      /* Row 9 (Actinides) */
+      { name: "Actinium",    symbol: "Ac", atomicNumber: 89,  group: 3, period: 7, category: "actinides" },
+      { name: "Thorium",     symbol: "Th", atomicNumber: 90,  group: 3, period: 7, category: "actinides" },
+      { name: "Protactinium",symbol: "Pa", atomicNumber: 91,  group: 3, period: 7, category: "actinides" },
+      { name: "Uranium",     symbol: "U",  atomicNumber: 92,  group: 3, period: 7, category: "actinides" },
+      { name: "Neptunium",   symbol: "Np", atomicNumber: 93,  group: 3, period: 7, category: "actinides" },
+      { name: "Plutonium",   symbol: "Pu", atomicNumber: 94,  group: 3, period: 7, category: "actinides" },
+      { name: "Americium",   symbol: "Am", atomicNumber: 95,  group: 3, period: 7, category: "actinides" },
+      { name: "Curium",      symbol: "Cm", atomicNumber: 96,  group: 3, period: 7, category: "actinides" },
+      { name: "Berkelium",   symbol: "Bk", atomicNumber: 97,  group: 3, period: 7, category: "actinides" },
+      { name: "Californium", symbol: "Cf", atomicNumber: 98,  group: 3, period: 7, category: "actinides" },
+      { name: "Einsteinium", symbol: "Es", atomicNumber: 99,  group: 3, period: 7, category: "actinides" },
+      { name: "Fermium",     symbol: "Fm", atomicNumber: 100, group: 3, period: 7, category: "actinides" },
+      { name: "Mendelevium", symbol: "Md", atomicNumber: 101, group: 3, period: 7, category: "actinides" },
+      { name: "Nobelium",    symbol: "No", atomicNumber: 102, group: 3, period: 7, category: "actinides" },
+      { name: "Lawrencium",  symbol: "Lr", atomicNumber: 103, group: 3, period: 7, category: "actinides" }
+    ];
+
+    /*************************************************************************
+     * 3. FUN FACTS FOR ELEMENTS
+     *************************************************************************/
+    const funFacts = {
+      "Hydrogen": "The most abundant element in the universe, making up about 75% of its mass.",
+      "Helium": "So light it can escape Earth’s gravity and drift into space.",
+      "Lithium": "Can float on water, but reacts violently with it.",
+      "Beryllium": "Used in aerospace because it's lighter than aluminum and stronger than steel.",
+      "Boron": "Essential for plant growth and found in borax, a common laundry booster.",
+      "Carbon": "The only element that can form more compounds than all others combined.",
+      "Nitrogen": "Makes up about 78% of Earth's atmosphere.",
+      "Oxygen": "The most abundant element in Earth's crust.",
+      "Fluorine": "The most reactive element, igniting many substances on contact.",
+      "Neon": "Glows bright red-orange in neon signs.",
+      "Sodium": "Reacts explosively with water.",
+      "Magnesium": "Burns with a brilliant white flame, used in fireworks.",
+      "Aluminum": "The most abundant metal in Earth’s crust.",
+      "Silicon": "Main component of sand and key to modern electronics.",
+      "Phosphorus": "Exists in different forms, including white phosphorus which glows.",
+      "Sulfur": "Responsible for the smell of rotten eggs.",
+      "Chlorine": "Used to disinfect drinking water worldwide.",
+      "Argon": "A noble gas that’s ~1% of Earth’s atmosphere.",
+      "Potassium": "Essential for nerve function, found in bananas.",
+      "Calcium": "Most abundant metal in the human body.",
+      "Scandium": "Used in high-performance sports equipment.",
+      "Titanium": "As strong as steel but 45% lighter.",
+      "Vanadium": "Used to strengthen steel and in some batteries.",
+      "Chromium": "Gives rubies and emeralds their color.",
+      "Manganese": "Essential for steelmaking and metabolism.",
+      "Iron": "Main component of Earth's core.",
+      "Cobalt": "Used in blue pigments for glass and ceramics.",
+      "Nickel": "Found in Earth's core, used in rechargeable batteries.",
+      "Copper": "One of only two naturally colored metals (with gold).",
+      "Zinc": "Used to galvanize steel to prevent rust.",
+      "Gallium": "Melts in your hand at 29.8°C (85.6°F).",
+      "Germanium": "Used in early transistors and fiber optics.",
+      "Arsenic": "Historically used as poison; also in semiconductors.",
+      "Selenium": "Essential for health, used in photocopiers.",
+      "Bromine": "Only nonmetallic element that is liquid at room temp.",
+      "Krypton": "Used in photographic flashes for high-speed shots.",
+      "Rubidium": "So reactive it can spontaneously ignite in air.",
+      "Strontium": "Gives fireworks their bright red color.",
+      "Yttrium": "Found in LED screens and some superconductors.",
+      "Zirconium": "Corrosion-resistant, used in nuclear reactors.",
+      "Niobium": "Used in superconducting magnets, jet engines.",
+      "Molybdenum": "Required by plants for nitrogen fixation.",
+      "Technetium": "The first artificially produced element.",
+      "Ruthenium": "Used in platinum alloys to make them harder.",
+      "Rhodium": "Rarest and most valuable precious metal.",
+      "Palladium": "Absorbs hydrogen gas up to 900x its own volume.",
+      "Silver": "The best electrical conductor of all elements.",
+      "Cadmium": "Used in rechargeable batteries and pigments.",
+      "Indium": "Used in touchscreens and LCD displays.",
+      "Tin": "Used in bronze by ancient Romans.",
+      "Antimony": "Expands when it freezes, unlike most metals.",
+      "Tellurium": "Can make your breath smell like garlic if ingested.",
+      "Iodine": "Essential for thyroid health, found in seaweed.",
+      "Xenon": "Used in high-intensity lamps, spacecraft ion thrusters.",
+      "Cesium": "One of the most reactive metals, used in atomic clocks.",
+      "Barium": "Used in medical imaging for X-ray contrast.",
+      "Hafnium": "Absorbs neutrons, useful in nuclear reactors.",
+      "Tantalum": "Highly corrosion-resistant, used in implants.",
+      "Tungsten": "Highest melting point of any metal.",
+      "Rhenium": "One of the rarest elements in Earth's crust.",
+      "Osmium": "The densest naturally occurring element.",
+      "Iridium": "Found in meteorites, linked to dinosaur extinction.",
+      "Platinum": "Used in catalytic converters to clean exhaust.",
+      "Gold": "Malleable: 1g can be stretched into a mile-long wire.",
+      "Mercury": "The only metal that’s liquid at room temperature.",
+      "Thallium": "Once used in rat poison, highly toxic.",
+      "Lead": "Used in ancient Rome’s plumbing, causing poisoning.",
+      "Bismuth": "Expands when it freezes, like water does.",
+      "Polonium": "Discovered by Marie Curie, extremely radioactive.",
+      "Astatine": "So rare that less than a gram exists naturally.",
+      "Radon": "Radioactive noble gas seeping from the ground.",
+      "Francium": "The rarest naturally occurring element.",
+      "Radium": "Once used in glow-in-the-dark paint, radioactive.",
+      "Actinium": "Glows in the dark due to radioactivity.",
+      "Thorium": "Potential alternative nuclear fuel.",
+      "Protactinium": "One of the rarest and most expensive elements.",
+      "Uranium": "Powers nuclear reactors and weapons.",
+      "Neptunium": "Named after the planet Neptune.",
+      "Plutonium": "Used in nuclear weapons and space probes.",
+      "Americium": "Found in household smoke detectors.",
+      "Curium": "Named after Marie and Pierre Curie.",
+      "Berkelium": "Named after UC Berkeley.",
+      "Californium": "Used to start nuclear reactors, detect gold.",
+      "Einsteinium": "Found in H-bomb test fallout.",
+      "Fermium": "Named after Enrico Fermi, nuclear pioneer.",
+      "Mendelevium": "Named after Dmitri Mendeleev (periodic table).",
+      "Nobelium": "Named after Alfred Nobel, inventor of dynamite.",
+      "Lawrencium": "Named after Ernest Lawrence (cyclotron).",
+      "Rutherfordium": "Honors Ernest Rutherford, father of nuclear physics.",
+      "Dubnium": "Named after Dubna, Russia, where first synthesized.",
+      "Seaborgium": "Named after Glenn Seaborg while he was alive.",
+      "Bohrium": "Honors Niels Bohr, atomic structure pioneer.",
+      "Hassium": "Named after the German state of Hesse.",
+      "Meitnerium": "Honors Lise Meitner, co-discoverer of nuclear fission.",
+      "Darmstadtium": "Discovered in Darmstadt, Germany.",
+      "Roentgenium": "Named after Wilhelm Roentgen, discoverer of X-rays.",
+      "Copernicium": "Honors Nicolaus Copernicus (heliocentric model).",
+      "Nihonium": "First element discovered in Japan (Nihon = Japan).",
+      "Flerovium": "Named after Flerov Laboratory in Russia.",
+      "Moscovium": "Honors Moscow, where discovered.",
+      "Livermorium": "Named after Lawrence Livermore Lab in California.",
+      "Tennessine": "Named after Tennessee, a nuclear research hub.",
+      "Oganesson": "Honors Yuri Oganessian, superheavy elements expert.",
+      "Lanthanum": "Named from the Greek 'lanthanein' (to lie hidden). Used in camera lenses and special glass.",
+      "Cerium": "Most abundant lanthanide; used in lighter flints, catalytic converters, and glass polishing.",
+      "Praseodymium": "From Greek 'prasios didymos' (green twin). Used in welder’s goggles and strong magnets.",
+      "Neodymium": "Key component of powerful NdFeB magnets for motors, wind turbines, and headphones.",
+      "Promethium": "Radioactive with no stable isotopes; used in nuclear batteries and luminous paint.",
+      "Samarium": "Used in Sm–Co magnets (high temperature stability) and in cancer treatments (Samarium-153).",
+      "Europium": "Named after Europe; gives the red color in TV/LED phosphors and is used in euro banknotes.",
+      "Gadolinium": "High neutron absorption; used in MRI contrast agents and nuclear reactor control rods.",
+      "Terbium": "Named after Ytterby, Sweden; used in green phosphors for CRT screens and fluorescent lamps.",
+      "Dysprosium": "From Greek 'dysprositos' (hard to get). Used in high-performance magnets and reactor rods.",
+      "Holmium": "Has the highest magnetic strength of any element; used in specialty magnets and glass coloring.",
+      "Erbium": "Important for fiber-optic communications (erbium-doped fiber amplifiers) and pink-tinted glass.",
+      "Thulium": "Rarest stable lanthanide; used in portable X-ray devices and lasers.",
+      "Ytterbium": "Also named after Ytterby; used in some stainless steels and as a doping agent in fiber amplifiers.",
+      "Lutetium": "Heaviest lanthanide; used in PET scan detectors (Lutetium oxyorthosilicate) and cancer therapies.",
+      "Actinium": "The first actinide, used in cancer therapy research and as a tracer in scientific studies.",
+      "Thorium": "More abundant than uranium and holds potential as a safer, alternative nuclear fuel.",
+      "Protactinium": "Extremely rare and highly radioactive; one of the least studied naturally occurring elements.",
+      "Uranium": "The heaviest naturally occurring element, powering both nuclear reactors and weapons.",
+      "Neptunium": "The first transuranic element, produced in reactors and important for advanced nuclear research.",
+      "Plutonium": "Famous for its role in nuclear weapons and reactors; highly radioactive and man-made.",
+      "Americium": "Widely used in smoke detectors and industrial gauges due to its radioactive properties.",
+      "Curium": "Named in honor of Marie and Pierre Curie; used in scientific research and as a power source in space probes.",
+      "Berkelium": "Discovered at Berkeley, this element is produced in nuclear reactors in only minute amounts.",
+      "Californium": "One of the most radioactive elements, used in neutron activation analysis and as a startup neutron source.",
+      "Einsteinium": "Formed in nuclear explosions and named after Albert Einstein; it’s a product of intense scientific research.",
+      "Fermium": "A synthetic element created in nuclear tests, used to study the properties of heavy elements.",
+      "Mendelevium": "Named after Dmitri Mendeleev, the creator of the periodic table; it’s produced only in particle accelerators.",
+      "Nobelium": "Honors Alfred Nobel and has helped extend our understanding of the actinide series.",
+      "Lawrencium": "Named for Ernest Lawrence, it marks the end of the actinide series and has a complex electron structure."
+    };
+
+    /*************************************************************************
+     * 3. CATEGORY ADJACENCY & COLOR MAPPING
+     *************************************************************************/
+    const CATEGORY_ADJACENCY = {
+      "alkali metals":            ["alkaline earth metals"],
+      "alkaline earth metals":    ["alkali metals", "transition metals"],
+      "transition metals":        ["alkaline earth metals", "post-transition metals", "lanthanides", "actinides"],
+      "lanthanides":              ["transition metals"],
+      "actinides":                ["transition metals"],
+      "post-transition metals":   ["transition metals", "metalloids"],
+      "metalloids":               ["post-transition metals", "reactive nonmetals"],
+      "reactive nonmetals":       ["metalloids", "halogens"],
+      "halogens":                 ["reactive nonmetals", "noble gases"],
+      "noble gases":              ["halogens"]
+    };
+
+    const colorMap = {
+      "alkali metals":          "#ff9999",
+      "alkaline earth metals":  "#ffcc99",
+      "transition metals":      "#ffff99",
+      "lanthanides":            "#ccff99",
+      "actinides":              "#99ff99",
+      "post-transition metals": "#99ffff",
+      "metalloids":             "#9999ff",
+      "reactive nonmetals":     "#ff99ff",
+      "halogens":               "#ff99cc",
+      "noble gases":            "#ccccff"
+    };
+
+    function getCategoryColor(cat) {
+      return colorMap[cat] || "gray";
+    }
+
+    /*************************************************************************
+     * BFS for category adjacency
+     *************************************************************************/
+    function getCategoryDistance(guessCat, answerCat) {
+      if (guessCat === answerCat) return 0;
+      let queue = [guessCat], visited = new Set([guessCat]), dist = 0;
+      while (queue.length > 0) {
+        dist++;
+        let nextQueue = [];
+        for (const cat of queue) {
+          const neighbors = CATEGORY_ADJACENCY[cat] || [];
+          for (const n of neighbors) {
+            if (n === answerCat) return dist;
+            if (!visited.has(n)) {
+              visited.add(n);
+              nextQueue.push(n);
+            }
+          }
+        }
+        queue = nextQueue;
+        if (dist > 10) break;
+      }
+      return 999;
+    }
+
+    function getClassification(e) {
+      const metals = [
+        "alkali metals","alkaline earth metals","transition metals",
+        "lanthanides","actinides","post-transition metals"
+      ];
+      if (metals.includes(e.category)) return "metal";
+      if (e.category === "metalloids") return "metalloid";
+      return "nonmetal";
+    }
+
+    /*************************************************************************
+     * 4. TABLE POSITIONS (Long-Form Layout)
+     *************************************************************************/
+    const tablePositions = {
+      1: {r:1, c:1}, 2: {r:1, c:18},
+      3: {r:2, c:1}, 4: {r:2, c:2}, 5: {r:2, c:13}, 6: {r:2, c:14},
+      7: {r:2, c:15},8: {r:2, c:16},9: {r:2, c:17}, 10:{r:2, c:18},
+      11:{r:3, c:1}, 12:{r:3, c:2}, 13:{r:3, c:13},14:{r:3, c:14},
+      15:{r:3, c:15},16:{r:3, c:16},17:{r:3, c:17},18:{r:3, c:18},
+      19:{r:4, c:1}, 20:{r:4, c:2}, 21:{r:4, c:3}, 22:{r:4, c:4},
+      23:{r:4, c:5}, 24:{r:4, c:6}, 25:{r:4, c:7}, 26:{r:4, c:8},
+      27:{r:4, c:9}, 28:{r:4, c:10},29:{r:4, c:11},30:{r:4, c:12},
+      31:{r:4, c:13},32:{r:4, c:14},33:{r:4, c:15},34:{r:4, c:16},
+      35:{r:4, c:17},36:{r:4, c:18},
+      37:{r:5, c:1}, 38:{r:5, c:2}, 39:{r:5, c:3}, 40:{r:5, c:4},
+      41:{r:5, c:5}, 42:{r:5, c:6}, 43:{r:5, c:7}, 44:{r:5, c:8},
+      45:{r:5, c:9}, 46:{r:5, c:10},47:{r:5, c:11},48:{r:5, c:12},
+      49:{r:5, c:13},50:{r:5, c:14},51:{r:5, c:15},52:{r:5, c:16},
+      53:{r:5, c:17},54:{r:5, c:18},
+      55:{r:6, c:1}, 56:{r:6, c:2}, 72:{r:6, c:4}, 73:{r:6, c:5},
+      74:{r:6, c:6}, 75:{r:6, c:7}, 76:{r:6, c:8}, 77:{r:6, c:9},
+      78:{r:6, c:10},79:{r:6, c:11},80:{r:6, c:12},81:{r:6, c:13},
+      82:{r:6, c:14},83:{r:6, c:15},84:{r:6, c:16},85:{r:6, c:17},
+      86:{r:6, c:18},
+      87:{r:7, c:1}, 88:{r:7, c:2}, 104:{r:7, c:4},105:{r:7, c:5},
+      106:{r:7, c:6},107:{r:7, c:7},108:{r:7, c:8},109:{r:7, c:9},
+      110:{r:7, c:10},111:{r:7, c:11},112:{r:7, c:12},113:{r:7, c:13},
+      114:{r:7, c:14},115:{r:7, c:15},116:{r:7, c:16},117:{r:7, c:17},
+      118:{r:7, c:18},
+      57:{r:8, c:3}, 58:{r:8, c:4}, 59:{r:8, c:5}, 60:{r:8, c:6},
+      61:{r:8, c:7}, 62:{r:8, c:8}, 63:{r:8, c:9}, 64:{r:8, c:10},
+      65:{r:8, c:11},66:{r:8, c:12},67:{r:8, c:13},68:{r:8, c:14},
+      69:{r:8, c:15},70:{r:8, c:16},71:{r:8, c:17},
+      89:{r:9, c:3}, 90:{r:9, c:4}, 91:{r:9, c:5}, 92:{r:9, c:6},
+      93:{r:9, c:7}, 94:{r:9, c:8}, 95:{r:9, c:9}, 96:{r:9, c:10},
+      97:{r:9, c:11},98:{r:9, c:12},99:{r:9, c:13},100:{r:9, c:14},
+      101:{r:9, c:15},102:{r:9, c:16},103:{r:9, c:17}
+    };
+
+    /*************************************************************************
+     * 4. DAILY PUZZLE => stable "random" puzzle each day
+     *************************************************************************/
+    const validElements = elements.filter(e => tablePositions[e.atomicNumber]);
+
+    // Simple seeded RNG using a linear congruential generator.
+    function seededRandom(seed) {
+      const m = 0x80000000; // 2^31
+      const a = 1103515245;
+      const c = 12345;
+      let state = seed;
+      return function() {
+        state = (a * state + c) % m;
+        return state / m;
+      }
+    }
+
+    function getDailyElement(date) {
+      // Generate a seed from the date (number of days since epoch)
+      const daySeed = Math.floor(date.getTime() / (24 * 60 * 60 * 1000));
+      const rand = seededRandom(daySeed);
+
+      // Make a copy of validElements and shuffle it using Fisher-Yates
+      const elementsCopy = [...validElements];
+      for (let i = elementsCopy.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [elementsCopy[i], elementsCopy[j]] = [elementsCopy[j], elementsCopy[i]];
+      }
+      // Return the first element from the shuffled list
+      return elementsCopy[0];
+    }
+
+    const answer = getDailyElement(new Date());
+
+    let attempts = 0;
+    const maxAttempts = 6;
+    let guessHistory = [];
+    let gameOver = false;
+
+    let stats = {
+      gamesPlayed: 0,
+      gamesWon: 0,
+      currentStreak: 0,
+      maxStreak: 0
+    };
+
+    document.addEventListener("DOMContentLoaded", () => {
+      loadStatsFromStorage();
+
+      // Sort elements by name (alphabetical) for the dropdown
+      const sortedByName = [...validElements].sort((a, b) => a.name.localeCompare(b.name));
+      const dataList = document.getElementById("elementNames");
+      sortedByName.forEach(e => {
+        const opt = document.createElement("option");
+        opt.value = e.name;
+        dataList.appendChild(opt);
+      });
+
+      renderTable();
+    });
+
+    function renderTable() {
+      const tableDiv = document.getElementById("periodicTable");
+      validElements.forEach(e => {
+        const pos = tablePositions[e.atomicNumber];
+        if (!pos) return;
+        const square = document.createElement("div");
+        square.classList.add("element-square");
+        square.dataset.atomicNumber = e.atomicNumber;
+
+        // background color from category
+        square.style.backgroundColor = getCategoryColor(e.category);
+
+        // Mystery element => color cycle
+        if (e.atomicNumber === answer.atomicNumber) {
+          square.classList.add("answer-square", "mystery-animate");
+        }
+
+        square.style.gridRow = pos.r + " / " + (pos.r + 1);
+        square.style.gridColumn = pos.c + " / " + (pos.c + 1);
+        tableDiv.appendChild(square);
+      });
+    }
+
+    /*************************************************************************
+     * 5. GUESS LOGIC
+     *************************************************************************/
+    function submitGuess() {
+      if (gameOver) return;
+      const guessInput = document.getElementById("guessInput");
+      const guessName = guessInput.value.trim();
+      if (!guessName) return;
+
+      attempts++;
+      const guessedElement = validElements.find(
+        e => e.name.toLowerCase() === guessName.toLowerCase()
+      );
+      if (!guessedElement) {
+        document.getElementById("message").textContent =
+          "Element not found (or not in the table)!";
+        return;
+      }
+
+      const numberHint  = getNumberHint(guessedElement.atomicNumber, answer.atomicNumber);
+      const numberColor = getNumberColor(guessedElement.atomicNumber, answer.atomicNumber);
+      const distance    = getCategoryDistance(guessedElement.category, answer.category);
+      let symbolColor   = "wrong";
+      if (distance === 0) symbolColor = "correct";
+      else if (distance === 1) symbolColor = "orange";
+      else if (distance === 2) symbolColor = "yellow";
+
+      const groupDiff   = Math.abs(guessedElement.group - answer.group);
+      const groupColor  = getCloseColor(groupDiff);
+      const periodDiff  = Math.abs(guessedElement.period - answer.period);
+      const periodColor = getCloseColor(periodDiff);
+
+      const guessClass  = getClassification(guessedElement);
+      const answerClass = getClassification(answer);
+      let classColor = "wrong";
+      if (guessClass === answerClass) {
+        classColor = "correct";
+      } else if (
+        (guessClass === "metal" && answerClass === "metalloid") ||
+        (guessClass === "metalloid" && answerClass === "metal") ||
+        (guessClass === "metalloid" && answerClass === "nonmetal") ||
+        (guessClass === "nonmetal" && answerClass === "metalloid")
+      ) {
+        classColor = "orange";
+      }
+
+      const feedback = {
+        numberHint, numberColor, symbolColor,
+        groupColor, periodColor, classColor
+      };
+      guessHistory.push({ guessObj: guessedElement, feedback });
+      addRowFeedback(guessedElement, feedback);
+
+      if (guessedElement.atomicNumber !== answer.atomicNumber) {
+        markWrongGuess(guessedElement);
+      }
+
+      if (guessedElement.atomicNumber === answer.atomicNumber) {
+        gameOver = true;
+        document.getElementById("message").textContent = `Correct! The element was ${answer.name}.`;
+        guessInput.disabled = true;
+        colorAnswerSquareGreen();
+        revealAllSquares(true);
+        showShareButton();
+        showElementInfo(answer);
+        updateStats(true);
+      } else if (attempts >= maxAttempts) {
+        gameOver = true;
+        document.getElementById("message").textContent =
+          `Out of tries! The correct element was ${answer.name}.`;
+        guessInput.disabled = true;
+        revealAllSquares(false);
+        showShareButton();
+        showElementInfo(answer);
+        updateStats(false);
+      } else {
+        document.getElementById("message").textContent =
+          `Try #${attempts} of ${maxAttempts}. Keep guessing!`;
+      }
+
+      guessInput.value = "";
+      guessInput.focus();
+    }
+
+    function addRowFeedback(guessObj, fb) {
+      const rowDiv = document.createElement("div");
+      rowDiv.className = "row";
+
+      function createCell(cls, text) {
+        const c = document.createElement("div");
+        c.className = "cell " + cls;
+        c.textContent = text;
+        return c;
+      }
+
+      rowDiv.appendChild(createCell("", guessObj.name));
+      rowDiv.appendChild(createCell(fb.symbolColor, guessObj.symbol));
+      rowDiv.appendChild(createCell(fb.numberColor, fb.numberHint));
+      rowDiv.appendChild(createCell(fb.groupColor,  "G" + guessObj.group));
+      rowDiv.appendChild(createCell(fb.periodColor, "P" + guessObj.period));
+      rowDiv.appendChild(createCell(fb.classColor,  getClassification(guessObj)));
+      document.getElementById("game").appendChild(rowDiv);
+    }
+
+    function markWrongGuess(guessObj) {
+      const sel = `#periodicTable .element-square[data-atomic-number="${guessObj.atomicNumber}"]`;
+      const sq = document.querySelector(sel);
+      if (sq && !sq.classList.contains("answer-square")) {
+        sq.classList.add("revealed");
+        sq.style.fontSize = "10px";
+        sq.style.color = "black";
+        sq.style.textAlign = "center";
+        sq.style.display = "flex";
+        sq.style.flexDirection = "column";
+        sq.style.justifyContent = "center";
+        sq.innerHTML = `${guessObj.symbol}<br>${guessObj.atomicNumber}`;
+      }
+    }
+
+    function colorAnswerSquareGreen() {
+      const sel = `#periodicTable .element-square[data-atomic-number="${answer.atomicNumber}"]`;
+      const ans = document.querySelector(sel);
+      if (!ans) return;
+      ans.classList.remove("mystery-animate");
+      ans.classList.remove("answer-square");
+      ans.classList.add("revealed", "mystery-frame");
+      ans.style.backgroundColor = "#6aaa64"; // green
+      ans.style.color = "white";
+      ans.style.fontSize = "10px";
+      ans.style.textAlign = "center";
+      ans.style.display = "flex";
+      ans.style.flexDirection = "column";
+      ans.style.justifyContent = "center";
+      ans.innerHTML = `${answer.symbol}<br>${answer.atomicNumber}`;
+    }
+
+    function revealAllSquares(solved) {
+      validElements.forEach(e => {
+        const sel = `#periodicTable .element-square[data-atomic-number="${e.atomicNumber}"]`;
+        const sq = document.querySelector(sel);
+        if (!sq) return;
+
+        if (e.atomicNumber === answer.atomicNumber) {
+          sq.classList.remove("mystery-animate");
+          sq.classList.remove("answer-square");
+          sq.classList.add("revealed", "mystery-frame");
+          sq.style.fontSize = "10px";
+          sq.style.textAlign = "center";
+          sq.style.display = "flex";
+          sq.style.flexDirection = "column";
+          sq.style.justifyContent = "center";
+          sq.innerHTML = `${e.symbol}<br>${e.atomicNumber}`;
+          if (solved) {
+            sq.style.backgroundColor = "#6aaa64"; // green for win
+            sq.style.color = "white";
+          } else {
+            sq.style.backgroundColor = "red";      // red for loss
+            sq.style.color = "white";
+          }
+        } else {
+          sq.classList.add("revealed");
+          if (!sq.innerHTML.trim()) {
+            sq.style.fontSize = "10px";
+            sq.style.display = "flex";
+            sq.style.flexDirection = "column";
+            sq.style.justifyContent = "center";
+            sq.innerHTML = `${e.symbol}<br>${e.atomicNumber}`;
+            sq.style.color = "black";
+          }
+        }
+      });
+    }
+
+    /*************************************************************************
+     * 6. SHARE RESULTS
+     *************************************************************************/
+    function showShareButton() {
+      if (document.getElementById("shareButton")) return;
+      const btn = document.createElement("button");
+      btn.id = "shareButton";
+      btn.textContent = "Share Results";
+      btn.addEventListener("click", shareResults);
+      document.getElementById("message").appendChild(btn);
+    }
+
+    function shareResults() {
+      let summary = `Elementle ${attempts <= maxAttempts ? attempts : "X"}/${maxAttempts}\n\n`;
+      guessHistory.forEach(({ feedback:fb }) => {
+        let numberEmoji = fb.numberColor === "correct" ? "🟩"
+                          : fb.numberHint.includes("↓") ? "⬇️"
+                          : fb.numberHint.includes("↑") ? "⬆️"
+                          : "⬜";
+        let symbolEmoji = fb.symbolColor === "correct" ? "🟩"
+                          : fb.symbolColor === "orange" ? "🟧"
+                          : fb.symbolColor === "yellow" ? "🟨"
+                          : "⬜";
+        let groupEmoji = fb.groupColor === "correct" ? "🟩"
+                         : fb.groupColor === "orange" ? "🟧"
+                         : fb.groupColor === "yellow" ? "🟨"
+                         : "⬜";
+        let periodEmoji = fb.periodColor === "correct" ? "🟩"
+                          : fb.periodColor === "orange" ? "🟧"
+                          : fb.periodColor === "yellow" ? "🟨"
+                          : "⬜";
+        let classEmoji = fb.classColor === "correct" ? "🟩"
+                         : fb.classColor === "orange" ? "🟧"
+                         : "⬜";
+        summary += `${numberEmoji}${symbolEmoji}${groupEmoji}${periodEmoji}${classEmoji}\n`;
+      });
+      summary += `\nPlay here: https://getkrakengames.github.io/Elementle/\n`;
+      try {
+        navigator.clipboard.writeText(summary).then(() => {
+          alert("Results copied to clipboard!");
+        });
+      } catch (err) {
+        console.error("Clipboard error:", err);
+        alert("Unable to copy automatically, please copy manually:\n\n" + summary);
+      }
+    }
+
+    /*************************************************************************
+     * 7. OPTIONAL EDUCATIONAL CONTENT
+     *************************************************************************/
+    function showElementInfo(element) {
+      const fact = funFacts[element.name]
+        || `Fun Fact about ${element.name}: It belongs to the "${element.category}" category!`;
+      const infoDiv = document.createElement("div");
+      infoDiv.textContent = fact;
+      infoDiv.style.marginTop = "10px";
+      document.getElementById("message").appendChild(infoDiv);
+    }
+
+    /*************************************************************************
+     * 8. STATS & LOCAL STORAGE
+     *************************************************************************/
+    function loadStatsFromStorage() {
+      const data = localStorage.getItem("elementleStats");
+      if (data) { stats = JSON.parse(data); }
+    }
+
+    function saveStatsToStorage() {
+      localStorage.setItem("elementleStats", JSON.stringify(stats));
+    }
+
+    function updateStats(won) {
+      stats.gamesPlayed++;
+      if (won) {
+        stats.gamesWon++;
+        stats.currentStreak++;
+        if (stats.currentStreak > stats.maxStreak) {
+          stats.maxStreak = stats.currentStreak;
+        }
+      } else {
+        stats.currentStreak = 0;
+      }
+      saveStatsToStorage();
+    }
+
+    function openStats() {
+      updateStatsUI();
+      document.getElementById("statsModal").style.display = "flex";
+    }
+
+    function closeStats() {
+      document.getElementById("statsModal").style.display = "none";
+    }
+
+    function updateStatsUI() {
+      document.getElementById("gamesPlayed").textContent  = "Games played: " + stats.gamesPlayed;
+      document.getElementById("gamesWon").textContent     = "Games won: " + stats.gamesWon;
+      document.getElementById("currentStreak").textContent= "Current streak: " + stats.currentStreak;
+      document.getElementById("maxStreak").textContent    = "Max streak: " + stats.maxStreak;
+    }
+
+    /*************************************************************************
+     * 9. HARD MODE
+     *************************************************************************/
+    function toggleHardMode() {
+      const toggle = document.getElementById("hardModeToggle");
+      if (toggle.checked) {
+        document.body.classList.add("hard-mode");
+      } else {
+        document.body.classList.remove("hard-mode");
+      }
+    }
+
+    /*************************************************************************
+     * HELPER FUNCTIONS
+     *************************************************************************/
+    function getNumberHint(guessNum, ansNum) {
+      if (guessNum === ansNum) return guessNum + " =";
+      return guessNum + (guessNum < ansNum ? " ↑" : " ↓");
+    }
+    function getNumberColor(guessNum, ansNum) {
+      if (guessNum === ansNum) return "correct";
+      const diff = Math.abs(guessNum - ansNum);
+      if (diff <= 2)  return "orange";
+      if (diff <= 10) return "yellow";
+      return "wrong";
+    }
+    function getCloseColor(diff) {
+      if (diff === 0) return "correct";
+      if (diff === 1) return "orange";
+      if (diff === 2) return "yellow";
+      return "wrong";
+    }
+  </script>
+</body>
+</html>
